@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+.eslintcache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+backend/climate_auth.db
+backend/pyclima.db
+backend/data/active_data.csv
+frontend/dist/
+frontend/lint_output.txt
+frontend/eslint-output.txt
+frontend/lint_results.json
+frontend/main_output.txt

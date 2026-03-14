@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pandas
+numpy
+scikit-learn
+python-multipart
+bcrypt==4.2.1
+python-jose[cryptography]
+sqlalchemy
+netCDF4
+xarray
