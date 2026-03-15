@@ -54,6 +54,8 @@ export default function ExploreGlobeSection() {
     }
 
     setLoading(true)
+    setPoints([]) // Fix: clear old data to avoid 'similar values' ghosting
+    setSummary({ avg: '—', min: '—', max: '—', count: 0 }) 
     try {
       const [globeRes, trendRes] = await Promise.all([
         climateApi.globe(targetYear, targetVari),

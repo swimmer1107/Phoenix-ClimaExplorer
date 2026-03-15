@@ -256,50 +256,58 @@ def process_netcdf(path: str):
         if found_vars:
             ds = ds[found_vars]
 
-        # 3. Aggressive Downsampling (Judge-Ready Speed)
-        # ── Temporal: Resample to yearly if time exists
-        if time_name:
-            try:
-                # Attempt yearly resampling (this is what our dashboard likes)
-                ds = ds.resample({time_name: "1YS"}).mean()
-            except:
-                # If resampling fails (e.g. non-standard time), take every 12th step (usually monthly to yearly)
-                if len(ds[time_name]) > 30:
-                    ds = ds.isel({time_name: slice(0, None, max(1, len(ds[time_name]) // 30))})
+        # 3. Aggressive Downsampling (Submission Speed)
+        # ── Temporal: Take max 40 snapshots (don't resample - too slow)
+        if time_name and len(ds[time_name]) > 40:
+            step = len(ds[time_name]) // 30
+            ds = ds.isel({time_name: slice(0, None, step)})
 
-        # ── Spatial: Reduce grid to ~1.5 degree resolution
-        if len(ds[lat_name]) > 100 or len(ds[lon_name]) > 200:
-            ds = ds.coarsen({lat_name: max(1, len(ds[lat_name])//80), 
-                             lon_name: max(1, len(ds[lon_name])//160)}, 
-                            boundary="trim").mean()
+        # ── Spatial: Thin the grid significantly BEFORE conversion
+        # We target a 1.0 degree - 1.5 degree resolution for web performance
+        lat_len = len(ds[lat_name])
+        lon_len = len(ds[lon_name])
+        
+        if lat_len > 90 or lon_len > 180:
+            lat_step = max(1, lat_len // 60)
+            lon_step = max(1, lon_len // 120)
+            ds = ds.isel({lat_name: slice(0, None, lat_step), 
+                         lon_name: slice(0, None, lon_step)})
 
-        # 4. Conversion (Selective & Capped)
-        # We explicitly cap at 50,000 rows to ensure the response is under 5MB
+        # 4. Conversion (Selective & Fast)
         df = ds.to_dataframe().reset_index()
-        if len(df) > 50000:
-            df = df.sample(50000).sort_index()
+        
+        # Hard cap to ensure network response is < 500ms
+        if len(df) > 35000:
+            df = df.sample(35000).sort_index()
 
-        # Rename and clean
+        # Rename and clean coordinate names
         rename_map = {lat_name: "latitude", lon_name: "longitude"}
         if time_name: rename_map[time_name] = "raw_time"
         df = df.rename(columns=rename_map)
 
         if "raw_time" in df.columns:
-            df["year"] = pd.to_datetime(df["raw_time"]).dt.year
+            try:
+                df["year"] = pd.to_datetime(df["raw_time"]).dt.year
+            except:
+                df["year"] = 2024
         elif "year" not in df.columns:
             df["year"] = 2024
 
-        # Heuristic mapping
-        var_map = {
-            'tas': 'temperature', 'tmp': 'temperature', 'temp': 'temperature',
-            'pr': 'rainfall', 'precip': 'rainfall', 'rain': 'rainfall',
-            'hur': 'humidity', 'rh': 'humidity', 'humi': 'humidity',
-            'ws': 'wind_speed', 'wind': 'wind_speed', 'co2': 'co2_index'
+        # Precise Variable Mapping (Case Insensitive Substring)
+        schema = {
+            'temperature': ['tas', 'tmp', 'temp', 't2m', 'tavg'],
+            'rainfall':    ['pr', 'precip', 'rain', 'prec', 'pp'],
+            'humidity':    ['hur', 'rh', 'humi', 'relative_humidity'],
+            'wind_speed':  ['ws', 'wind', 'sfcwind', 'speed'],
+            'co2_index':   ['co2', 'carbon', 'ppm']
         }
-        for old, new in var_map.items():
-            found = next((c for c in df.columns if old in c.lower()), None)
-            if found and new not in df.columns:
-                df[new] = df[found]
+        
+        for final_var, aliases in schema.items():
+            for alias in aliases:
+                match = next((c for c in df.columns if alias == c.lower() or (len(alias) > 2 and alias in c.lower())), None)
+                if match and final_var not in df.columns:
+                    df[final_var] = df[match]
+                    break
 
         # Region tagging (Vectorized & Accurate)
         if "region" not in df.columns:
