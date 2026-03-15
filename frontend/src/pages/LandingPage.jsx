@@ -448,7 +448,7 @@ export default function LandingPage() {
                   <p className="text-slate-500 leading-relaxed text-sm font-medium">{f.desc}</p>
                 </div>
                 
-                {f.title === "NetCDF Ingress" && !vizData && (
+                {f.title === "NetCDF Protocol" && !vizData && (
                   <button onClick={(e) => { e.stopPropagation(); f.secondaryAction() }} className="mt-6 flex items-center gap-2 text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors">
                     <Play size={10} /> Use Sample Data
                   </button>

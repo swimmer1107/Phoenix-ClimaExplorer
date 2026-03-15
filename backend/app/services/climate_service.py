@@ -76,7 +76,8 @@ def get_summary():
     return _get_summary_cached(mtime)
 
 
-def get_trends(variable: str, region: str = "Global"):
+@lru_cache(maxsize=128)
+def _get_trends_cached(variable: str, region: str, mtime: float):
     df = _load()
     if region and region != "Global":
         df = df[df["region"] == region]
@@ -84,6 +85,11 @@ def get_trends(variable: str, region: str = "Global"):
         variable = "temperature"
     grp = df.groupby("year")[variable].mean().reset_index()
     return [{"year": int(r["year"]), "value": round(float(r[variable]), 3)} for _, r in grp.iterrows()]
+
+def get_trends(variable: str, region: str = "Global"):
+    path = ACTIVE_CSV if os.path.exists(ACTIVE_CSV) else DEFAULT_CSV
+    mtime = os.path.getmtime(path) if os.path.exists(path) else 0.0
+    return _get_trends_cached(variable, region, mtime)
 
 
 def compare_years(year1: int, year2: int, variable: str, region: str = "Global"):
@@ -118,9 +124,9 @@ def compare_years(year1: int, year2: int, variable: str, region: str = "Global")
     }
 
 
-def get_globe_points(year: int, variable: str):
+@lru_cache(maxsize=32)
+def _get_globe_cached(year: int, variable: str, mtime: float):
     df = _load()
-
     df_y = df[df["year"] == year].copy()
     if df_y.empty:
         years = sorted(df["year"].unique())
@@ -135,7 +141,6 @@ def get_globe_points(year: int, variable: str):
 
     m = df_y[variable].mean()
     s = df_y[variable].std() + 1e-9
-    df_y = df_y.copy()
     df_y["intensity"] = ((df_y[variable] - m) / s).clip(-3, 3)
 
     summary = {
@@ -157,6 +162,11 @@ def get_globe_points(year: int, variable: str):
             "unit":     "°C" if "temp" in variable else "ppm" if "co2" in variable else "units",
         },
     }
+
+def get_globe_points(year: int, variable: str):
+    path = ACTIVE_CSV if os.path.exists(ACTIVE_CSV) else DEFAULT_CSV
+    mtime = os.path.getmtime(path) if os.path.exists(path) else 0.0
+    return _get_globe_cached(year, variable, mtime)
 
 
 def get_insights(year1: int, year2: int, region: str, variable: str):
@@ -195,25 +205,32 @@ def save_uploaded(path: str):
 
 
 def process_netcdf(path: str):
-    """Actual NetCDF to CSV conversion for tabular core engine."""
+    """Memory-optimized NetCDF to CSV conversion with downsampling."""
     try:
         ds = xr.open_dataset(path)
         
-        # Identify coordinate dimensions
+        # ── 1. Dimension Pruning ──
         lat_name = next((c for c in ds.coords if 'lat' in c.lower()), None)
         lon_name = next((c for c in ds.coords if 'lon' in c.lower()), None)
         time_name = next((c for c in ds.coords if 'time' in c.lower()), None)
         
         if not lat_name or not lon_name:
             raise ValueError("NetCDF file must contain latitude/longitude coordinates.")
-            
-        # Select first time step if 4D
-        if time_name and len(ds[time_name]) > 0:
-            # We'll take a subset if too large, or just flatten
-            # For this UI, we need tabular data: lat, lon, year, region, variables
-            df = ds.to_dataframe().reset_index()
-        else:
-            df = ds.to_dataframe().reset_index()
+
+        # ── 2. Intelligent Downsampling (Crucial for Web Performance) ──
+        # If the grid is high-res (e.g. 0.25 deg), downsample to ~2 deg for web viz
+        if len(ds[lat_name]) > 100 or len(ds[lon_name]) > 200:
+            ds = ds.coarsen({lat_name: max(1, len(ds[lat_name])//90), 
+                             lon_name: max(1, len(ds[lon_name])//180)}, 
+                            boundary="trim").mean()
+
+        # ── 3. Time Slicing ──
+        # If dataset is too deep in time, take yearly snapshots to keep memory low
+        if time_name and len(ds[time_name]) > 300: # more than ~25 years of monthly data
+            ds = ds.resample({time_name: "1YS"}).mean()
+
+        # ── 4. Conversion to Dataframe ──
+        df = ds.to_dataframe().reset_index()
 
         # Rename columns to match our schema
         rename_map = {lat_name: "latitude", lon_name: "longitude"}
@@ -239,9 +256,8 @@ def process_netcdf(path: str):
             if found and new not in df.columns:
                 df[new] = df[found]
 
-        # Ensure all required dimensions exist
+        # Ensure required dimensions exist
         if "region" not in df.columns:
-            # Vectorized region mapping based on lat/lon
             conditions = [
                 (df["latitude"] > 60),
                 (df["latitude"] > 20) & (df["longitude"] > -170) & (df["longitude"] < -20),
@@ -253,18 +269,24 @@ def process_netcdf(path: str):
             choices = ["Arctic", "North America", "South America", "Europe", "Africa", "Asia"]
             df["region"] = np.select(conditions, choices, default="Australia")
 
-        # Clean columns
+        # Clean columns and cast to float32 for 50% memory saving
         valid_cols = ["year", "region", "latitude", "longitude"] + CLIMATE_VARS
         df = df[[c for c in df.columns if c in valid_cols]]
         
-        # Save to active CSV for the engine
+        for col in CLIMATE_VARS:
+            if col in df.columns:
+                df[col] = df[col].astype(np.float32)
+
+        # ── 5. Persistence ──
         df.to_csv(ACTIVE_CSV, index=False)
         _DATA_CACHE["df"] = None
         _get_summary_cached.cache_clear()
+        _get_trends_cached.cache_clear()
+        _get_globe_cached.cache_clear()
         
-        return {"rows": len(df), "columns": list(df.columns), "status": "NetCDF L3 Sliced"}
+        return {"rows": len(df), "columns": list(df.columns), "status": f"Optimized: {len(df)} points"}
     except Exception as e:
-        raise ValueError(f"NetCDF Error: {str(e)}")
+        raise ValueError(f"NetCDF Optimization Error: {str(e)}")
 
 def export_to_netcdf(year: int, variable: str):
     """Generate a .nc file from current tabular data for a specific slice."""

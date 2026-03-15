@@ -103,7 +103,7 @@ export default function DashboardPage() {
         <label className="cursor-pointer glass rounded-2xl px-6 py-3.5 flex items-center gap-3 hover:bg-slate-800/70 transition-all group border border-slate-700 hover:border-c-cyan/40">
           {uploading ? <RefreshCw size={18} className="animate-spin text-c-cyan" /> : <Upload size={18} className="text-c-cyan group-hover:scale-110 transition-transform" />}
           <span className="text-sm font-bold text-slate-200">{uploading ? 'Processing…' : 'Upload Dataset'}</span>
-          <input type="file" accept=".csv" className="hidden" onChange={handleUpload} />
+          <input type="file" accept=".nc,.csv" className="hidden" onChange={handleUpload} />
         </label>
       </div>
 
