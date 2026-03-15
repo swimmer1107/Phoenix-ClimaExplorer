@@ -22,9 +22,12 @@ export const climateApi = {
   globe:    (y, v)          => api.get('/climate/globe',   { params: { year: y, variable: v } }),
   insights: (y1, y2, r, v)  => api.get('/climate/insights', { params: { year1: y1, year2: y2, region: r, variable: v } }),
   heatmap:  ()              => api.get('/climate/heatmap'),
-  upload:   (file) => {
+  upload: (file) => {
     const fd = new FormData(); fd.append('file', file)
-    return api.post('/climate/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return api.post('/climate/upload', fd, { 
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000 // 5 minutes for heavy NetCDF processing
+    })
   },
   exportNc: (y, v) => api.get('/climate/export', { 
     params: { year: y, variable: v },

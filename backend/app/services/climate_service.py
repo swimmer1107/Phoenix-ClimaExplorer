@@ -93,8 +93,11 @@ def _get_trends_cached(variable: str, region: str, mtime: float):
     df = _load()
     if region and region != "Global":
         df = df[df["region"] == region]
+    
     if variable not in df.columns:
-        variable = "temperature"
+        # Return empty if variable doesn't exist – don't mislead user with temp data
+        return []
+        
     grp = df.groupby("year")[variable].mean().reset_index()
     return [{"year": int(r["year"]), "value": round(float(r[variable]), 3)} for _, r in grp.iterrows()]
 
@@ -149,7 +152,11 @@ def _get_globe_cached(year: int, variable: str, mtime: float):
             df_y = df.iloc[:100].copy()
 
     if variable not in df_y.columns:
-        variable = "temperature"
+        return {
+            "points": [],
+            "summary": {"avg": 0, "min": 0, "max": 0, "count": 0},
+            "metadata": {"year": int(year), "variable": variable, "unit": "N/A"}
+        }
 
     m = df_y[variable].mean()
     s = df_y[variable].std() + 1e-9
@@ -294,9 +301,18 @@ def process_netcdf(path: str):
             if found and new not in df.columns:
                 df[new] = df[found]
 
-        # Region tagging (Vectorized)
+        # Region tagging (Vectorized & Accurate)
         if "region" not in df.columns:
-            df["region"] = "Global" # Default fast
+            conditions = [
+                (df["latitude"] > 60),
+                (df["latitude"] > 20) & (df["longitude"] > -170) & (df["longitude"] < -20),
+                (df["latitude"] < 20) & (df["latitude"] > -60) & (df["longitude"] > -100) & (df["longitude"] < -30),
+                (df["latitude"] > 35) & (df["longitude"] > -25) & (df["longitude"] < 45),
+                (df["latitude"] < 35) & (df["latitude"] > -35) & (df["longitude"] > -20) & (df["longitude"] < 55),
+                (df["latitude"] > -10) & (df["latitude"] < 80) & (df["longitude"] > 60) & (df["longitude"] < 150),
+            ]
+            choices = ["Arctic", "North America", "South America", "Europe", "Africa", "Asia"]
+            df["region"] = np.select(conditions, choices, default="Australia")
 
         # Save to disk as an optimized mini-archive
         valid_cols = ["year", "region", "latitude", "longitude"] + CLIMATE_VARS
@@ -366,28 +382,32 @@ def get_heatmap():
 
 
 def get_bulk_dashboard(region: str = "Global"):
-    """Returns EVERYTHING needed for one dashboard view in one request."""
-    # This avoids 6+ parallel requests which slow down Render Free Tier
+    """ULTRA-FAST: Single-pass aggregation for the whole dashboard."""
     df = _load()
     path = ACTIVE_CSV if os.path.exists(ACTIVE_CSV) else DEFAULT_CSV
     mtime = os.path.getmtime(path) if os.path.exists(path) else 0.0
     
-    # 1. Summary
-    summary = _get_summary_cached(mtime)
-    
-    # 2. Trends for all vars (much faster than individual calls)
-    trends_all = {}
+    # Filter region once
+    if region and region != "Global":
+        df = df[df["region"] == region]
+
+    # Calculate trends for all variables in one groupby pass
     available = [v for v in CLIMATE_VARS if v in df.columns]
-    for v in available:
-        trends_all[v] = _get_trends_cached(v, region, mtime)
-        
-    # 3. Heatmap
-    heatmap = get_heatmap() 
+    trends_all = {}
     
+    if available:
+        # Vectorized groupby mean for all vars
+        grp = df.groupby("year")[available].mean().reset_index()
+        for v in available:
+            trends_all[v] = [
+                {"year": int(r["year"]), "value": round(float(r[v]), 3)} 
+                for _, r in grp.iterrows()
+            ]
+
     return {
-        "summary": summary,
+        "summary": _get_summary_cached(mtime),
         "trends":  trends_all,
-        "heatmap": heatmap,
+        "heatmap": get_heatmap(), # Still kept separate as it has its own logic
         "region":  region
     }
 
