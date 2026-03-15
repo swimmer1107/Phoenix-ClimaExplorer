@@ -61,12 +61,20 @@ def _load() -> pd.DataFrame:
     try:
         df = pd.read_csv(path, dtype=dtypes, engine='c', low_memory=True)
         if df.empty: raise ValueError("Empty dataset")
+        
+        # Update cache
+        _DATA_CACHE["df"] = df
+        _DATA_CACHE["last_path"] = path
+        _DATA_CACHE["mtime"] = mtime
+        return df
     except Exception as e:
+        print(f"[climate_service] ❌ Load failed for {path}: {e}")
         # Emergency fallback to dummy data if file is corrupt
-        return pd.DataFrame({
+        fallback_df = pd.DataFrame({
             "year": [2024], "region": ["Global"], "latitude": [0], "longitude": [0],
-            "temperature": [15], "rainfall": [100], "humidity": [50], "wind_speed": [5], "co2_index": [420], "climate_risk_score": [0.5]
+            "temperature": [15.0], "rainfall": [100.0], "humidity": [50.0], "wind_speed": [5.0], "co2_index": [420.0], "climate_risk_score": [0.5]
         })
+        return fallback_df
 
 # ── Pre-warm the cache at import time so first request is instant ──
 try:
@@ -242,20 +250,24 @@ def process_netcdf(path: str):
         # decode_times=False prevents crashes on non-standard year formats
         # We use a small chunk size to keep memory low
         try:
-            ds = xr.open_dataset(path, chunks={"lat": 100, "lon": 100}, decode_times=False)
-        except:
-            # Fallback for older .nc formats
-            ds = xr.open_dataset(path, engine="scipy", decode_times=False)
-        
-        # Search everywhere for dimensions (coords or data_vars)
-        all_names = list(ds.coords) + list(ds.data_vars)
-        lat_name = next((c for c in all_names if 'lat' in c.lower()), None)
-        lon_name = next((c for c in all_names if 'lon' in c.lower()), None)
-        time_name = next((c for c in all_names if 'time' in c.lower() or 'year' in c.lower()), None)
-        
-        if not lat_name or not lon_name:
-            # Last-ditch: assume first two variables are lat/lon if they have typical lengths
-            raise ValueError("Incompatible NetCDF: Latitude/Longitude coordinates not found.")
+            # First pass: open without chunks to see variable names
+            with xr.open_dataset(path, decode_times=False) as ds_meta:
+                all_names = list(ds_meta.coords) + list(ds_meta.data_vars)
+                lat_name = next((c for c in all_names if 'lat' in c.lower()), None)
+                lon_name = next((c for c in all_names if 'lon' in c.lower()), None)
+                time_name = next((c for c in all_names if 'time' in c.lower() or 'year' in c.lower()), None)
+
+            if not lat_name or not lon_name:
+                raise ValueError("Latitude/Longitude coordinates not found in NetCDF.")
+
+            # Second pass: open with chunks for memory efficiency based on detected names
+            chunks = {lat_name: 100, lon_name: 100}
+            try:
+                ds = xr.open_dataset(path, chunks=chunks, decode_times=False)
+            except:
+                ds = xr.open_dataset(path, decode_times=False)
+        except Exception as e:
+            raise ValueError(f"Open failed (possible encoding issue): {str(e)}")
 
         # 2. Variable Pruning (ONLY keep what we can visualize)
         found_vars = []
@@ -302,7 +314,11 @@ def process_netcdf(path: str):
 
         if "raw_time" in df.columns:
             try:
-                df["year"] = pd.to_datetime(df["raw_time"]).dt.year
+                # If it looks like a year already, just use it
+                if df["raw_time"].dtype in [np.int32, np.int64, np.float32, np.float64]:
+                    df["year"] = df["raw_time"].astype(int)
+                else:
+                    df["year"] = pd.to_datetime(df["raw_time"], errors='coerce').dt.year.fillna(2024).astype(int)
             except:
                 df["year"] = 2024
         elif "year" not in df.columns:

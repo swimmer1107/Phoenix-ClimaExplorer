@@ -23,6 +23,7 @@ export default function ExploreGlobeSection() {
   const [loading,   setLoading]   = useState(false)
   const [dataSource,setDataSource]= useState('Realistic Climate Model')
   const [summary,   setSummary]   = useState({ avg: '—', min: '—', max: '—', count: 0 })
+  const [unit,      setUnit]      = useState('units')
   const [datasetTag,setDatasetTag]= useState('initial')
 
   // Keep latest request ref to discard stale responses
@@ -51,6 +52,7 @@ export default function ExploreGlobeSection() {
       setPoints(cached.points)
       setTrendData(cached.trends)
       setSummary(cached.summary)
+      setUnit(cached.unit || 'units')
       return
     }
 
@@ -70,12 +72,14 @@ export default function ExploreGlobeSection() {
         ? rawPoints
         : rawPoints.filter(p => p.region === targetReg)
       const summaryStats = globeRes.data.summary || { avg: 0, min: 0, max: 0, count: 0 }
+      const metadata = globeRes.data.metadata || {}
       const trends = trendRes.data.data || []
 
       setPoints(filteredPoints)
       setTrendData(trends)
       setSummary(summaryStats)
-      sliceCache.set(cacheKey, { points: filteredPoints, trends, summary: summaryStats })
+      setUnit(metadata.unit || 'units')
+      sliceCache.set(cacheKey, { points: filteredPoints, trends, summary: summaryStats, unit: metadata.unit })
     } catch (err) {
       console.error('Explore fetch error:', err)
     } finally {
@@ -214,7 +218,7 @@ export default function ExploreGlobeSection() {
                     <div>
                       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Observation Avg</p>
                       <p className="text-3xl font-black text-white tracking-tight">
-                        {summary.avg} <span className="text-sm font-bold text-slate-500 ml-1">units</span>
+                        {summary.avg} <span className="text-sm font-bold text-slate-500 ml-1">{unit}</span>
                       </p>
                     </div>
                     <div className="w-px h-10 bg-white/10" />
