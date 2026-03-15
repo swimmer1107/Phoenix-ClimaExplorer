@@ -85,6 +85,7 @@ def _get_summary_cached(mtime: float):
         "regions":     ["Global"] + sorted(df["region"].unique().tolist()),
         "variables":   [c for c in df.columns if c not in ["year", "region", "latitude", "longitude"]],
         "data_source": "Uploaded Dataset" if os.path.exists(ACTIVE_CSV) else "Realistic Climate Model",
+        "dataset_tag": str(mtime)
     }
 
 def get_summary():

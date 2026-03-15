@@ -23,6 +23,7 @@ export default function ExploreGlobeSection() {
   const [loading,   setLoading]   = useState(false)
   const [dataSource,setDataSource]= useState('Realistic Climate Model')
   const [summary,   setSummary]   = useState({ avg: '—', min: '—', max: '—', count: 0 })
+  const [datasetTag,setDatasetTag]= useState('initial')
 
   // Keep latest request ref to discard stale responses
   const reqRef = useRef(0)
@@ -34,14 +35,14 @@ export default function ExploreGlobeSection() {
         const yrs = r.data.years || []
         setYears(yrs)
         setDataSource(r.data.data_source || 'Realistic Climate Model')
-        // Start with the most recent year
+        setDatasetTag(r.data.dataset_tag || 'default')
         if (yrs.length) setYear(yrs[yrs.length - 1])
       })
       .catch(() => {})
   }, [])
 
-  const fetchData = useCallback(async (targetYear, targetVari, targetReg) => {
-    const cacheKey = `${targetYear}-${targetVari}-${targetReg}`
+  const fetchData = useCallback(async (targetYear, targetVari, targetReg, tag) => {
+    const cacheKey = `${tag}-${targetYear}-${targetVari}-${targetReg}`
     const myReq = ++reqRef.current
 
     // Hit cache instantly — no loading flash
@@ -82,12 +83,12 @@ export default function ExploreGlobeSection() {
     }
   }, [])
 
-  // 80ms debounce on slider — instant on variable/region change
+  // 80ms debounce on slider
   useEffect(() => {
     const delay = 80
-    const timer = setTimeout(() => fetchData(year, vari, reg), delay)
+    const timer = setTimeout(() => fetchData(year, vari, reg, datasetTag), delay)
     return () => clearTimeout(timer)
-  }, [year, vari, reg, fetchData])
+  }, [year, vari, reg, datasetTag, fetchData])
 
   const mappedPoints = useMemo(() => {
     if (!Array.isArray(points)) return []
