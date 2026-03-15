@@ -1,7 +1,17 @@
 # 🌍 PyClimaExplorer: Planetary Intelligence Hub
 ### **Team Phoenix · Technex'26 · IIT BHU**
 
+🔗 **Live Deployment**: [phoenix-clima-explorer.vercel.app](https://phoenix-clima-explorer.vercel.app/)
+
+![Hero](/assets/readme/hero.png)
+
 PyClimaExplorer is a state-of-the-art climate intelligence platform designed to visualize, analyze, and predict planetary shifts using high-dimensional satellite and sensor data. It features a high-performance engine capable of processing massive **NetCDF (.nc)** planetary archives and transforming them into interactive 3D visualizations.
+
+## 🖼️ Visual Experience
+
+| Planetary Observation | Data Diagnostics |
+| :---: | :---: |
+| ![Globe](/assets/readme/globe.png) | ![Dashboard](/assets/readme/dashboard.png) |
 
 ---
 
