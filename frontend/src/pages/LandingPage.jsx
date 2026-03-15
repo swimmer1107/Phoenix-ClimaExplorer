@@ -265,27 +265,25 @@ export default function LandingPage() {
   const fileInputRef = useRef(null)
 
   const fetchVizData = async (fileName, rowCount) => {
-    const VARS = ['temperature', 'rainfall', 'humidity', 'wind_speed', 'co2_index', 'climate_risk_score']
-    const [trendResults, heatmapRes] = await Promise.all([
-      Promise.all(VARS.map(v => climateApi.trends(v, 'Global').then(r => ({ v, data: r.data.data || [] })))),
-      climateApi.heatmap(),
-    ])
+    try {
+      const resp = await climateApi.bulk('Global')
+      const { trends, heatmap, summary } = resp.data
 
-    const trendData = {}
-    trendResults.forEach(({ v, data }) => { trendData[v] = data })
+      setVizData({
+        trendData: trends,
+        heatmapData: heatmap,
+        fileName,
+        rowCount: rowCount || summary?.rows,
+      })
+      setUploadSuccess(true)
 
-    setVizData({
-      trendData,
-      heatmapData: heatmapRes.data,
-      fileName,
-      rowCount,
-    })
-    setUploadSuccess(true)
-
-    // Smooth scroll after mount
-    setTimeout(() => {
-      document.getElementById('data-viz-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 500)
+      // Smooth scroll after mount
+      setTimeout(() => {
+        document.getElementById('data-viz-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 500)
+    } catch (err) {
+      setUploadError('Failed to synchronize visualization matrix.')
+    }
   }
 
   const handleFileUpload = async (e) => {

@@ -46,16 +46,18 @@ def _load() -> pd.DataFrame:
         return _DATA_CACHE["df"]
 
     # MEMORY OPTIMIZATION: Use specific dtypes to save 75% RAM
-    dtypes = {
-        'year': 'int16', 
-        'latitude': 'float32', 
-        'longitude': 'float32',
-        'region': 'category'
-    }
-    for v in CLIMATE_VARS: dtypes[v] = 'float32'
+    # We read column names first to apply dtypes correctly without double-reading data
+    cols = pd.read_csv(path, nrows=0).columns.tolist()
+    dtypes = {}
+    if 'year' in cols: dtypes['year'] = 'int16'
+    if 'latitude' in cols: dtypes['latitude'] = 'float32'
+    if 'longitude' in cols: dtypes['longitude'] = 'float32'
+    if 'region' in cols: dtypes['region'] = 'category'
+    for v in CLIMATE_VARS: 
+        if v in cols: dtypes[v] = 'float32'
     
     # Fast-read with C engine
-    df = pd.read_csv(path, dtype={k:v for k,v in dtypes.items() if k in pd.read_csv(path, nrows=0).columns})
+    df = pd.read_csv(path, dtype=dtypes, engine='c', low_memory=True)
     _DATA_CACHE["df"] = df
     _DATA_CACHE["last_path"] = path
     _DATA_CACHE["mtime"] = mtime
@@ -234,15 +236,18 @@ def process_netcdf(path: str):
             raise ValueError("NetCDF file must contain latitude/longitude coordinates.")
 
         # 2. Variable Pruning (ONLY keep what we can visualize)
-        # This is a huge speedup: we ignore the other 50 variables in the file
         found_vars = []
         heurs = ['tas','tmp','temp','pr','precip','rain','hur','rh','humi','ws','wind','co2']
         for v in ds.data_vars:
             if any(h in v.lower() for h in heurs):
                 found_vars.append(v)
         
-        # Keep dims and found vars
-        ds = ds[found_vars]
+        if not found_vars:
+            # Fallback: just take the first few data variables
+            found_vars = list(ds.data_vars)[:3]
+        
+        if found_vars:
+            ds = ds[found_vars]
 
         # 3. Aggressive Downsampling for Web (Judge-Ready Speed)
         # Reduce grid to ~1.5 degree resolution for instant interaction
