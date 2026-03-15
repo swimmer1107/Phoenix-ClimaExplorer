@@ -249,15 +249,28 @@ def process_netcdf(path: str):
         if found_vars:
             ds = ds[found_vars]
 
-        # 3. Aggressive Downsampling for Web (Judge-Ready Speed)
-        # Reduce grid to ~1.5 degree resolution for instant interaction
-        if len(ds[lat_name]) > 120 or len(ds[lon_name]) > 240:
-            ds = ds.coarsen({lat_name: max(1, len(ds[lat_name])//100), 
-                             lon_name: max(1, len(ds[lon_name])//200)}, 
+        # 3. Aggressive Downsampling (Judge-Ready Speed)
+        # ── Temporal: Resample to yearly if time exists
+        if time_name:
+            try:
+                # Attempt yearly resampling (this is what our dashboard likes)
+                ds = ds.resample({time_name: "1YS"}).mean()
+            except:
+                # If resampling fails (e.g. non-standard time), take every 12th step (usually monthly to yearly)
+                if len(ds[time_name]) > 30:
+                    ds = ds.isel({time_name: slice(0, None, max(1, len(ds[time_name]) // 30))})
+
+        # ── Spatial: Reduce grid to ~1.5 degree resolution
+        if len(ds[lat_name]) > 100 or len(ds[lon_name]) > 200:
+            ds = ds.coarsen({lat_name: max(1, len(ds[lat_name])//80), 
+                             lon_name: max(1, len(ds[lon_name])//160)}, 
                             boundary="trim").mean()
 
-        # 4. Conversion (Selective)
+        # 4. Conversion (Selective & Capped)
+        # We explicitly cap at 50,000 rows to ensure the response is under 5MB
         df = ds.to_dataframe().reset_index()
+        if len(df) > 50000:
+            df = df.sample(50000).sort_index()
 
         # Rename and clean
         rename_map = {lat_name: "latitude", lon_name: "longitude"}

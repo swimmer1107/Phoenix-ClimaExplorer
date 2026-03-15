@@ -298,7 +298,8 @@ export default function LandingPage() {
       const res = await climateApi.upload(file)
       await fetchVizData(file.name, res.data.rows)
     } catch (err) {
-      setUploadError(err.response?.data?.detail || 'Ingress rejected. Protocol violation.')
+      const msg = err.response?.data?.detail || err.message || 'Ingress rejected. Protocol violation.'
+      setUploadError(msg.toUpperCase())
     } finally {
       setUploadLoading(false)
       e.target.value = ''
