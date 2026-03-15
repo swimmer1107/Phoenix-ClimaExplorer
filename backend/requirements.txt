@@ -9,3 +9,4 @@ python-jose[cryptography]
 sqlalchemy
 netCDF4
 xarray
+dask
