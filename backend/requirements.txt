@@ -10,3 +10,5 @@ sqlalchemy
 netCDF4
 xarray
 dask
+h5netcdf
+scipy
