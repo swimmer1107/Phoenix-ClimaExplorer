@@ -43,17 +43,18 @@ export default function DashboardPage() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
-  const loadSummary = useCallback(async () => {
-    try { const r = await climateApi.summary(); setSummary(r.data) } catch {}
-  }, [])
-
-  const loadTrends = useCallback(async () => {
+  const loadAll = useCallback(async (r = selReg) => {
     setLoading(true)
     try {
-      const r = await climateApi.trends(selVar, selReg)
-      const data = r.data.data || []
-      setTrends(data)
-      const vals = data.map(d => d.value)
+      const resp = await climateApi.bulk(r)
+      const { summary: s, trends: t, heatmap: h } = resp.data
+      setSummary(s)
+      
+      // Update trends for the currently selected variable
+      const currentTrends = t[selVar] || []
+      setTrends(currentTrends)
+      
+      const vals = currentTrends.map(d => d.value)
       if (vals.length) setKpis({
         avg:   (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2),
         min:   Math.min(...vals).toFixed(2),
@@ -61,18 +62,27 @@ export default function DashboardPage() {
         delta: (vals[vals.length - 1] - vals[0]).toFixed(2),
         last:  vals[vals.length - 1]?.toFixed(2),
       })
-    } catch {} finally { setLoading(false) }
+    } catch (err) {
+      showToast('❌ Failed to sync climate matrix')
+    } finally { setLoading(false) }
   }, [selVar, selReg])
 
-  useEffect(() => { loadSummary() }, [])
-  useEffect(() => { loadTrends() }, [selVar, selReg])
+  useEffect(() => { loadAll() }, [selReg]) // Only trigger on region change
+  
+  // When variable changes, we can just slice from local cache if we had one, 
+  // but for simplicity and reactivity with filters, we'll re-fetch or use bulk.
+  // Let's keep it simple: refetch bulk on region, but variable change just updates view.
+  useEffect(() => {
+    if (!summary) return 
+    loadAll() 
+  }, [selVar]) 
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return
     setUploading(true)
     try {
       await climateApi.upload(file)
-      await loadSummary(); await loadTrends()
+      await loadAll()
       showToast('✅ Dataset loaded successfully!')
     } catch (err) { showToast('❌ ' + (err.response?.data?.detail || 'Upload failed')) }
     finally { setUploading(false) }
@@ -131,8 +141,8 @@ export default function DashboardPage() {
             {regions.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
-        <button onClick={loadTrends} className="flex items-center gap-2 px-5 py-2.5 glass rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-slate-700 transition-all">
-          <RefreshCw size={14} /> Refresh
+        <button onClick={() => loadAll()} className="flex items-center gap-2 px-5 py-2.5 glass rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-slate-700 transition-all">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 

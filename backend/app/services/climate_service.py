@@ -338,3 +338,30 @@ def get_heatmap():
 
     return {"rows": rows, "variables": vars_available}
 
+
+def get_bulk_dashboard(region: str = "Global"):
+    """Returns EVERYTHING needed for one dashboard view in one request."""
+    # This avoids 6+ parallel requests which slow down Render Free Tier
+    df = _load()
+    path = ACTIVE_CSV if os.path.exists(ACTIVE_CSV) else DEFAULT_CSV
+    mtime = os.path.getmtime(path) if os.path.exists(path) else 0.0
+    
+    # 1. Summary
+    summary = _get_summary_cached(mtime)
+    
+    # 2. Trends for all vars (much faster than individual calls)
+    trends_all = {}
+    available = [v for v in CLIMATE_VARS if v in df.columns]
+    for v in available:
+        trends_all[v] = _get_trends_cached(v, region, mtime)
+        
+    # 3. Heatmap
+    heatmap = get_heatmap() 
+    
+    return {
+        "summary": summary,
+        "trends":  trends_all,
+        "heatmap": heatmap,
+        "region":  region
+    }
+

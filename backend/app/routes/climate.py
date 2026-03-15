@@ -52,6 +52,11 @@ def insights(
 def heatmap():
     return cs.get_heatmap()
 
+@router.get("/bulk")
+def bulk_data(region: str = "Global"):
+    """Returns trends for all variables + summary + heatmap in one go. Much faster for UI."""
+    return cs.get_bulk_dashboard(region)
+
 @router.get("/export")
 def export(year: int = 2024, variable: str = "temperature"):
     """Download current data slice as a .nc file."""

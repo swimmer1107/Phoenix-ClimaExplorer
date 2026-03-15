@@ -30,6 +30,7 @@ export const climateApi = {
     params: { year: y, variable: v },
     responseType: 'blob' 
   }),
+  bulk: (r) => api.get('/climate/bulk', { params: { region: r } }),
 }
 
 export default api
